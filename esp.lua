@@ -1,148 +1,216 @@
+local TweenService = game:GetService("TweenService");
+local RunService = game:GetService("RunService");
+local TextService = game:GetService("TextService");
 
-if not game:IsLoaded() then
-    game.Loaded:Wait()
+local Player = game:GetService("Players").LocalPlayer;
+
+local NotifGui = Instance.new("ScreenGui");
+NotifGui.Name = "AkaliNotif";
+NotifGui.Parent = RunService:IsStudio() and Player.PlayerGui or game:GetService("CoreGui");
+
+local Container = Instance.new("Frame");
+Container.Name = "Container";
+Container.Position = UDim2.new(0, 20, 0.5, -20);
+Container.Size = UDim2.new(0, 300, 0.5, 0);
+Container.BackgroundTransparency = 1;
+Container.Parent = NotifGui;
+
+local function Image(ID, Button)
+	local NewImage = Instance.new(string.format("Image%s", Button and "Button" or "Label"));
+	NewImage.Image = ID;
+	NewImage.BackgroundTransparency = 1;
+	return NewImage;
 end
 
--- =========================
--- SERVICES
--- =========================
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local Camera = workspace.CurrentCamera
+local function Round2px()
+	local NewImage = Image("http://www.roblox.com/asset/?id=5761488251");
+	NewImage.ScaleType = Enum.ScaleType.Slice;
+	NewImage.SliceCenter = Rect.new(2, 2, 298, 298);
+	NewImage.ImageColor3 = Color3.fromRGB(30, 30, 30);
+	return NewImage;
+end
 
-local LocalPlayer = Players.LocalPlayer
+local function Shadow2px()
+	local NewImage = Image("http://www.roblox.com/asset/?id=5761498316");
+	NewImage.ScaleType = Enum.ScaleType.Slice;
+	NewImage.SliceCenter = Rect.new(17, 17, 283, 283);
+	NewImage.Size = UDim2.fromScale(1, 1) + UDim2.fromOffset(30, 30);
+	NewImage.Position = -UDim2.fromOffset(15, 15);
+	NewImage.ImageColor3 = Color3.fromRGB(30, 30, 30);
+	return NewImage;
+end
 
--- =========================
--- SETTINGS
--- =========================
-local ESPSettings = {
-    Enabled = true,
-    TeamCheck = true,
+local Padding = 10;
+local DescriptionPadding = 10;
+local InstructionObjects = {};
+local TweenTime = 1;
+local TweenStyle = Enum.EasingStyle.Sine;
+local TweenDirection = Enum.EasingDirection.Out;
 
-    CenterDot = true,
+local LastTick = tick();
 
-    EnemyColor = Color3.fromRGB(255, 120, 120),
-    TeamColor = Color3.fromRGB(120, 255, 180),
+local function CalculateBounds(TableOfObjects)
+	local TableOfObjects = typeof(TableOfObjects) == "table" and TableOfObjects or {};
+	local X, Y = 0, 0;
+	for _, Object in next, TableOfObjects do
+		X += Object.AbsoluteSize.X;
+		Y += Object.AbsoluteSize.Y;
+	end
+	return {X = X, Y = Y, x = X, y = Y};
+end
 
-    NameSize = 30,
-    DotRadius = 5
+local CachedObjects = {};
+
+local function Update()
+	local DeltaTime = tick() - LastTick;
+	local PreviousObjects = {};
+	for CurObj, Object in next, InstructionObjects do
+		local Label, Delta, Done = Object[1], Object[2], Object[3];
+		if (not Done) then
+			if (Delta < TweenTime) then
+				Object[2] = math.clamp(Delta + DeltaTime, 0, 1);
+				Delta = Object[2];
+			else
+				Object[3] = true;
+			end
+		end
+		local NewValue = TweenService:GetValue(Delta, TweenStyle, TweenDirection);
+		local CurrentPos = Label.Position;
+		local PreviousBounds = CalculateBounds(PreviousObjects);
+		local TargetPos = UDim2.new(0, 0, 0, PreviousBounds.Y + (Padding * #PreviousObjects));
+		Label.Position = CurrentPos:Lerp(TargetPos, NewValue);
+		table.insert(PreviousObjects, Label);
+	end
+	CachedObjects = PreviousObjects;
+	LastTick = tick();
+end
+
+RunService:BindToRenderStep("UpdateList", 0, Update);
+
+local TitleSettings = {
+	Font = Enum.Font.GothamSemibold;
+	Size = 14;
 }
 
--- =========================
--- TOGGLE KEY
--- =========================
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.RightAlt then
-        ESPSettings.Enabled = not ESPSettings.Enabled
-        warn("[ESP]", ESPSettings.Enabled and "ENABLED" or "DISABLED")
-    end
-end)
+local DescriptionSettings = {
+	Font = Enum.Font.Gotham;
+	Size = 14;
+}
 
--- =========================
--- STORAGE
--- =========================
-local ESPObjects = {}
+local MaxWidth = (Container.AbsoluteSize.X - Padding - DescriptionPadding);
 
--- =========================
--- CREATE ESP
--- =========================
-local function CreateESP(Player)
-    if Player == LocalPlayer or ESPObjects[Player] then return end
-
-    local Name = Drawing.new("Text")
-    Name.Center = true
-    Name.Outline = true
-    Name.OutlineColor = Color3.new(0,0,0)
-    Name.Size = ESPSettings.NameSize
-    Name.Font = 3
-    Name.Visible = false
-
-    local Dot = Drawing.new("Circle")
-    Dot.Filled = true
-    Dot.Radius = ESPSettings.DotRadius
-    Dot.Visible = false
-
-    ESPObjects[Player] = {
-        Name = Name,
-        Dot = Dot
-    }
-
-    Player.CharacterAdded:Connect(function()
-        task.wait(0.15)
-    end)
+local function Label(Text, Font, Size, Button)
+	local Label = Instance.new(string.format("Text%s", Button and "Button" or "Label"));
+	Label.Text = Text;
+	Label.Font = Font;
+	Label.TextSize = Size;
+	Label.BackgroundTransparency = 1;
+	Label.TextXAlignment = Enum.TextXAlignment.Left;
+	Label.RichText = true;
+	Label.TextColor3 = Color3.fromRGB(255, 255, 255);
+	return Label;
 end
 
--- =========================
--- REMOVE ESP
--- =========================
-local function RemoveESP(Player)
-    if ESPObjects[Player] then
-        for _, obj in pairs(ESPObjects[Player]) do
-            obj:Remove()
-        end
-        ESPObjects[Player] = nil
-    end
+local function TitleLabel(Text)
+	return Label(Text, TitleSettings.Font, TitleSettings.Size);
 end
 
--- =========================
--- PLAYER CONNECTIONS
--- =========================
-for _, Player in ipairs(Players:GetPlayers()) do
-    CreateESP(Player)
+local function DescriptionLabel(Text)
+	return Label(Text, DescriptionSettings.Font, DescriptionSettings.Size);
 end
 
-Players.PlayerAdded:Connect(CreateESP)
-Players.PlayerRemoving:Connect(RemoveESP)
+local PropertyTweenOut = {
+	Text = "TextTransparency",
+	Fram = "BackgroundTransparency",
+	Imag = "ImageTransparency"
+}
 
--- =========================
--- RENDER LOOP
--- =========================
-RunService.RenderStepped:Connect(function()
-    for Player, ESP in pairs(ESPObjects) do
-        if not ESPSettings.Enabled then
-            for _, obj in pairs(ESP) do obj.Visible = false end
-            continue
-        end
+local function FadeProperty(Object)
+	local Prop = PropertyTweenOut[string.sub(Object.ClassName, 1, 4)];
+	TweenService:Create(Object, TweenInfo.new(0.25, TweenStyle, TweenDirection), {
+		[Prop] = 1;
+	}):Play();
+end
 
-        local Character = Player.Character
-        local HRP = Character and Character:FindFirstChild("HumanoidRootPart")
-        local Humanoid = Character and Character:FindFirstChild("Humanoid")
+local function SearchTableFor(Table, For)
+	for _, v in next, Table do
+		if (v == For) then
+			return true;
+		end
+	end
+	return false;
+end
 
-        if not Character or not HRP or not Humanoid or Humanoid.Health <= 0 then
-            for _, obj in pairs(ESP) do obj.Visible = false end
-            continue
-        end
+local function FindIndexByDependency(Table, Dependency)
+	for Index, Object in next, Table do
+		if (typeof(Object) == "table") then
+			local Found = SearchTableFor(Object, Dependency);
+			if (Found) then
+				return Index;
+			end
+		else
+			if (Object == Dependency) then
+				return Index;
+			end
+		end
+	end
+end
 
-        if ESPSettings.TeamCheck and Player.Team == LocalPlayer.Team then
-            for _, obj in pairs(ESP) do obj.Visible = false end
-            continue
-        end
+local function ResetObjects()
+	for _, Object in next, InstructionObjects do
+		Object[2] = 0;
+		Object[3] = false;
+	end
+end
 
-        local Pos, OnScreen = Camera:WorldToViewportPoint(HRP.Position)
-        if not OnScreen then
-            for _, obj in pairs(ESP) do obj.Visible = false end
-            continue
-        end
+local function FadeOutAfter(Object, Seconds)
+	wait(Seconds);
+	FadeProperty(Object);
+	for _, SubObj in next, Object:GetDescendants() do
+		FadeProperty(SubObj);
+	end
+	wait(0.25);
+	table.remove(InstructionObjects, FindIndexByDependency(InstructionObjects, Object));
+	ResetObjects();
+end
 
-        local DistanceStuds = (Camera.CFrame.Position - HRP.Position).Magnitude
-        local DistanceMeters = math.floor(DistanceStuds)
-
-        local DrawColor =
-            (Player.Team == LocalPlayer.Team)
-            and ESPSettings.TeamColor
-            or ESPSettings.EnemyColor
-
-        -- NAME + DISTANCE FORMAT
-        ESP.Name.Text = string.format("%s (%dm)", Player.Name, DistanceMeters)
-        ESP.Name.Position = Vector2.new(Pos.X, Pos.Y - 18)
-        ESP.Name.Color = DrawColor
-        ESP.Name.Visible = true
-
-        -- CENTER DOT
-        ESP.Dot.Position = Vector2.new(Pos.X, Pos.Y - 2)
-        ESP.Dot.Color = DrawColor
-        ESP.Dot.Visible = ESPSettings.CenterDot
-    end
-end)
+return {
+	Notify = function(Properties)
+		local Properties = typeof(Properties) == "table" and Properties or {};
+		local Title = Properties.Title;
+		local Description = Properties.Description;
+		local Duration = Properties.Duration or 5;
+		if (Title) or (Description) then -- Check that user has provided title and/or description
+			local Y = Title and 26 or 0;
+			if (Description) then
+				local TextSize = TextService:GetTextSize(Description, DescriptionSettings.Size, DescriptionSettings.Font, Vector2.new(0, 0));
+				for i = 1, math.ceil(TextSize.X / MaxWidth) do
+					Y += TextSize.Y;
+				end
+				Y += 8;
+			end
+			local NewLabel = Round2px();
+			NewLabel.Size = UDim2.new(1, 0, 0, Y);
+			NewLabel.Position = UDim2.new(-1, 20, 0, CalculateBounds(CachedObjects).Y + (Padding * #CachedObjects));
+			if (Title) then
+				local NewTitle = TitleLabel(Title);
+				NewTitle.Size = UDim2.new(1, -10, 0, 26);
+				NewTitle.Position = UDim2.fromOffset(10, 0);
+				NewTitle.Parent = NewLabel;
+			end
+			if (Description) then
+				local NewDescription = DescriptionLabel(Description);
+				NewDescription.TextWrapped = true;
+				NewDescription.Size = UDim2.fromScale(1, 1) + UDim2.fromOffset(-DescriptionPadding, Title and -26 or 0);
+				NewDescription.Position = UDim2.fromOffset(10, Title and 26 or 0);
+				NewDescription.TextYAlignment = Enum.TextYAlignment[Title and "Top" or "Center"];
+				NewDescription.Parent = NewLabel;
+			end
+			Shadow2px().Parent = NewLabel;
+			NewLabel.Parent = Container;
+			table.insert(InstructionObjects, {NewLabel, 0, false});
+			coroutine.wrap(FadeOutAfter)(NewLabel, Duration);
+		end
+	end,
+}
+game.Players.LocalPlayer:Kick("STOP USING/MAKING SKIDDED SCRIPTS YOU FUCKTARD ~ .gg/rbxfanclub ON TOP. ")
